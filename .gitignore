@@ -1,0 +1,26 @@
+# Rust build artifacts
+target/
+
+# Certificates
+certs/
+
+# Environment variables
+.env
+
+# Python virtual environment
+.venv/
+
+# Node.js dependencies
+node_modules/
+
+# Python cache
+__pycache__/
+
+# macOS system files
+.DS_Store
+
+# Log files
+*.log
+
+# Documentation and grading system
+docs/
