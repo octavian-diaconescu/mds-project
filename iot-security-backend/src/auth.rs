@@ -4,7 +4,7 @@ use crate::models::Claims;
 
 const JWT_EXPIRATION_HOURS: i64 = 12;
 
-pub fn create_jwt(user_id: i32) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn create_jwt(user_id: i32, is_admin: bool) -> Result<String, jsonwebtoken::errors::Error> {
     let expiration = Utc::now()
         .checked_add_signed(chrono::Duration::hours(JWT_EXPIRATION_HOURS))
         .expect("Invalid timestamp")
@@ -13,6 +13,7 @@ pub fn create_jwt(user_id: i32) -> Result<String, jsonwebtoken::errors::Error> {
     let claims = Claims {
         user_id,
         exp: expiration,
+        is_admin     
     };
 
     encode(

@@ -1,10 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct User {
     pub id: i32,
     pub email: String,
     pub password_hash: String,
+}   
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuthenticatedUser {
+    pub id: i32,
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,4 +30,5 @@ pub struct AuthRequest {
 pub struct Claims {
     pub user_id: i32,
     pub exp: usize,  // Expiration timestamp
+    pub is_admin: bool,
 }

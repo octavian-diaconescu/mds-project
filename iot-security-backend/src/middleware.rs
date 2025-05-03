@@ -5,6 +5,7 @@ use actix_web::{
 use futures_util::future::{LocalBoxFuture, Ready, ready};
 use std::rc::Rc;
 use crate::auth::validate_jwt;
+use crate::models::AuthenticatedUser;
 
 // Struct that represents the middleware
 pub struct JwtMiddleware;
@@ -59,7 +60,11 @@ where
             match token {
                 Some(token) => match validate_jwt(token) {
                     Ok(claims) => {
-                        req.extensions_mut().insert(claims.user_id);
+                        let user = AuthenticatedUser{
+                            id: claims.user_id,
+                            is_admin: claims.is_admin,
+                        };
+                        req.extensions_mut().insert(user);
                         service.call(req).await
                     }
                     Err(_) => Err(ErrorUnauthorized("Invalid token")),

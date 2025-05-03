@@ -3,6 +3,7 @@ mod middleware;
 mod models;
 
 use crate::models::AuthRequest;
+use crate::models::AuthenticatedUser;
 use actix_cors::Cors;
 // use actix_web::middleware::{from_fn, Logger};
 use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder, middleware::Logger};
@@ -23,7 +24,7 @@ use std::env;
 async fn create_device(
     payload: web::Json<serde_json::Value>,
     pool: web::Data<PgPool>,
-    user_id: web::ReqData<i32>,
+    user: web::ReqData<AuthenticatedUser>,
 ) -> impl Responder {
     let thing_name = match payload["name"].as_str() {
         Some(name) => name,
@@ -42,11 +43,11 @@ async fn create_device(
         .await
     {
         Ok(_) => {
-            // Only insert into database if AWS creation succeeded
+            // Only insert into database if AWS creation was successful
             match sqlx::query!(
                 "INSERT INTO user_devices (user_id, thing_name) VALUES ($1, $2)",
-                *user_id,
-                thing_name
+                user.id,
+                thing_name,
             )
             .execute(pool.get_ref())
             .await
@@ -77,68 +78,107 @@ async fn create_device(
     }
 }
 
-#[derive(Serialize)]
-struct DeviceResponse {
+// #[derive(Serialize)]
+// struct DeviceResponse {
+//     thing_name: String,
+// }
+#[derive(Serialize, sqlx::FromRow)]
+struct DeviceRecord {
     thing_name: String,
 }
 
 #[get("/devices")]
-async fn list_devices(pool: web::Data<PgPool>, user_id: web::ReqData<i32>) -> impl Responder {
-    let devices = sqlx::query!(
-        "SELECT thing_name FROM user_devices WHERE user_id = $1",
-        *user_id
+async fn list_devices(pool: web::Data<PgPool>, user: web::ReqData<AuthenticatedUser>) -> impl Responder {
+    // let devices = sqlx::query!(
+    //     "SELECT thing_name FROM user_devices WHERE user_id = $1",
+    //     *user_id
+    // )
+    // .fetch_all(pool.get_ref())
+    // .await
+    // .unwrap(); //Break operation if DB error
+
+    let role_result = sqlx::query!(
+        "SELECT role FROM users WHERE id = $1",
+        user.id
     )
-    .fetch_all(pool.get_ref())
-    .await
-    .unwrap();
+    .fetch_one(pool.get_ref())
+    .await;
 
-    let devices: Vec<DeviceResponse> = devices
-        .into_iter()
-        .map(|row| DeviceResponse {
-            thing_name: row.thing_name,
-        })
-        .collect();
+    let is_admin = match role_result {
+        Ok(user) => user.role.unwrap_or("user".to_string()) == "admin",
+        Err(_) => false,
+    };
 
-    HttpResponse::Ok().json(devices)
+    // Fetch all or only user devices
+    let devices_result = if is_admin {
+        sqlx::query_as::<_, DeviceRecord>("SELECT thing_name FROM user_devices")
+            .fetch_all(pool.get_ref())
+            .await
+    } else {
+        sqlx::query_as::<_, DeviceRecord>(
+            "SELECT thing_name FROM user_devices WHERE user_id = $1",
+        )
+        .bind(user.id)
+        .fetch_all(pool.get_ref())
+        .await
+    };
+
+     match devices_result {
+        Ok(devices) => HttpResponse::Ok().json(devices),
+        Err(e) => {
+            eprintln!("DB error: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to fetch devices");
+        }
+    }
+    // let devices: Vec<DeviceResponse> = devices
+    //     .into_iter()
+    //     .map(|row| DeviceResponse {
+    //         thing_name: row.thing_name,
+    //     })
+    //     .collect();
+
+    // HttpResponse::Ok().json(devices)
 }
 
 #[delete("/devices/{thing_name}")]
 async fn delete_device(
-    path: web::Path<String>,
+    path: web::Path<String>, //Extract thing_name from URL as string
     pool: web::Data<PgPool>,
-    user_id: web::ReqData<i32>,
+    user: web::ReqData<AuthenticatedUser>,
 ) -> impl Responder {
-    let thing_name = path.into_inner();
+    let thing_name = path.into_inner(); //Unwraps into String
 
-    // Verify ownership
-    let exists = sqlx::query!(
-        "SELECT 1 as exists FROM user_devices WHERE user_id = $1 AND thing_name = $2",
-        *user_id,
-        thing_name
-    )
-    .fetch_optional(pool.get_ref())
-    .await
-    .unwrap();
+    // If not admin, verify ownership
+    if !user.is_admin {
+        let exists = sqlx::query!(
+            "SELECT 1 as exists FROM user_devices WHERE user_id = $1 AND thing_name = $2",
+            user.id,
+            thing_name
+        )
+        .fetch_optional(pool.get_ref())
+        .await
+        .unwrap();
 
-    if exists.is_none() {
-        return HttpResponse::Unauthorized().body("Device not owned by user");
+        if exists.is_none() {
+            return HttpResponse::Unauthorized().body("Device not owned by user");
+        }
     }
-
     // Delete from AWS IoT Core
     let config = aws_config::load_from_env().await;
     let iot_client = Client::new(&config);
 
-    iot_client
+    if let Err(e) = iot_client
         .delete_thing()
         .thing_name(&thing_name)
         .send()
-        .await
-        .unwrap();
+        .await {
+            eprintln!("AWS IoT delete error: {:?}", e);
+            return HttpResponse::InternalServerError().body("Failed to delete thing from AWS IoT");
+        }
 
     // Delete from database
-    sqlx::query!(
-        "DELETE FROM user_devices WHERE user_id = $1 AND thing_name = $2",
-        *user_id,
+    let _ = sqlx::query!(
+        "DELETE FROM user_devices WHERE thing_name = $1",
         thing_name
     )
     .execute(pool.get_ref())
@@ -153,15 +193,16 @@ async fn register_user(payload: web::Json<AuthRequest>, pool: web::Data<PgPool>)
     let hashed_password = hash(&payload.password, DEFAULT_COST).unwrap();
 
     match sqlx::query!(
-        "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id",
+        "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, role",
         payload.email,
         hashed_password
     )
-    .fetch_one(pool.get_ref())
+    .fetch_one(pool.get_ref()) //Fetch the inserted row
     .await
     {
         Ok(user) => {
-            let token = create_jwt(user.id).unwrap();
+            let is_admin = user.role.as_deref() == Some("admin");
+            let token = create_jwt(user.id, is_admin).unwrap();
             HttpResponse::Ok().json(serde_json::json!({ "token": token }))
         }
         Err(e) => HttpResponse::BadRequest().body(format!("Registration failed: {}", e)),
@@ -171,7 +212,7 @@ async fn register_user(payload: web::Json<AuthRequest>, pool: web::Data<PgPool>)
 #[post("/login")]
 async fn login_user(payload: web::Json<AuthRequest>, pool: web::Data<PgPool>) -> impl Responder {
     let user = sqlx::query!(
-        "SELECT id, password_hash FROM users WHERE email = $1",
+        "SELECT id, password_hash, role FROM users WHERE email = $1",
         payload.email
     )
     .fetch_optional(pool.get_ref())
@@ -188,11 +229,12 @@ async fn login_user(payload: web::Json<AuthRequest>, pool: web::Data<PgPool>) ->
     };
 
     match user {
-        Some(user) => {
+        Some(user) => {  
             match verify(&payload.password, &user.password_hash) {
                 Ok(is_valid) => {
                     if is_valid {
-                        match create_jwt(user.id) {
+                        let is_admin = user.role.as_deref() == Some("admin");
+                        match create_jwt(user.id, is_admin) {
                             Ok(token) => HttpResponse::Ok().json(serde_json::json!({
                                 "token": token,
                                 "user_id": user.id
@@ -323,11 +365,11 @@ async fn verify_endpoint(query: web::Query<HashMap<String, String>>) -> impl Res
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // load .evn variables
+    // Load .evn variables
     dotenv().ok();
     env_logger::init();
 
-    // connect to containerized db
+    // Connect to containerized db
     let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
         eprintln!("DATABASE_URL not set in .env");
         std::process::exit(1);
@@ -344,12 +386,12 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    // start actix server
+    // Start actix server
     println!("Server running at http://localhost:8080");
-    HttpServer::new(move || {
+    HttpServer::new(move || { // Clone DB pool
         App::new()
-            .wrap(Cors::permissive())
-            .app_data(web::Data::new(pool.clone()))
+            .wrap(Cors::permissive()) //Allow any origin
+            .app_data(web::Data::new(pool.clone())) //Shared DB pool with all requests 
             .wrap(Logger::default())
             .service(register_user)
             .service(login_user)
@@ -357,14 +399,14 @@ async fn main() -> std::io::Result<()> {
             .service(public_receive_data) //public /data
             .service(
                 web::scope("/api")
-                .wrap(JwtMiddleware)
+                .wrap(JwtMiddleware) //Must go through this route
                 .service(create_device)
                 .service(list_devices)
                 .service(delete_device)
                 .service(receive_data) //secure /api/data
             )
     })
-    .bind("0.0.0.0:8080")?
+    .bind("0.0.0.0:8080")? // '?' Propagates errors
     .run()
     .await
 }
