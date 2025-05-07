@@ -303,7 +303,7 @@ async fn public_receive_data(data: web::Json<Value>, pool: web::Data<PgPool>) ->
 
 // HTTP endpoint to receive data
 #[post("/data")]
-async fn receive_data(data: web::Json<SensorData>, pool: web::Data<PgPool>, user_id: web::ReqData<i32>) -> impl Responder {
+async fn receive_data(data: web::Json<SensorData>, pool: web::Data<PgPool>, user: web::ReqData<AuthenticatedUser>) -> impl Responder {
     // let payload_json = serde_json::json!({
     //     "device_id": data.device_id,
     //     "temperature": data.temperature,
@@ -313,7 +313,7 @@ async fn receive_data(data: web::Json<SensorData>, pool: web::Data<PgPool>, user
     // First verify device ownership
     let _device_exists = sqlx::query!(
         "SELECT 1 AS exists FROM user_devices WHERE user_id = $1 AND thing_name = $2",
-        *user_id,
+        user.id,
         data.device_id
     )
     .fetch_optional(pool.get_ref())
