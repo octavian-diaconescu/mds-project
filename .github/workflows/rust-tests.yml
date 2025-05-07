@@ -37,6 +37,12 @@ jobs:
         toolchain: stable
         override: true
 
+    - name: Initialize database
+      run: |
+        psql -h localhost -U postgres -d iot_security -f ./db/SqlScript.sql
+      env:
+        PGPASSWORD: password
+
     - name: Install dependencies
       run: cargo build
       working-directory: ./iot-security-backend
@@ -51,12 +57,6 @@ jobs:
           echo "Waiting for database..."
           sleep 5
         done
-
-    - name: Initialize database
-      run: |
-        psql -h localhost -U postgres -d iot_security -f ./db/SqlScript.sql
-      env:
-        PGPASSWORD: password
 
     - name: Run tests
       env:
