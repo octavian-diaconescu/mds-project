@@ -1,0 +1,217 @@
+/* CLASS DIAGRAM */
+@startuml
+class AuthRequest {
+    - email: String
+    - password: String
+}
+
+class AuthenticatedUser {
+    - id: i32
+    - is_admin: bool
+}
+
+class JwtMiddleware {
+    + new_transform(service: S): Future
+}
+
+class DeviceRecord {
+    - thing_name: String
+}
+
+class SensorData {
+    - device_id: String
+    - temperature: f64
+    - timestamp: i64
+}
+
+class Database {
+    + connect(): PgPool
+    + query(sql: String): Result
+}
+
+class AWSIoTClient {
+    + create_thing(thing_name: String): Result
+    + delete_thing(thing_name: String): Result
+}
+
+class Main {
+    + main(): Result
+}
+
+Main --> JwtMiddleware
+Main --> Database
+Main --> AWSIoTClient
+Main --> AuthenticatedUser
+Main --> AuthRequest
+Main --> DeviceRecord
+Main --> SensorData
+JwtMiddleware --> AuthenticatedUser
+Database --> DeviceRecord
+AWSIoTClient --> DeviceRecord
+@enduml
+
+/// Sequence Diagrams ///
+
+/* send data */
+
+@startuml
+actor User
+participant "Frontend" as FE
+participant "Backend" as BE
+participant "Database" as DB
+participant "AWS IoT" as AWS
+
+User -> FE: Send data (device_id, temperature, timestamp)
+FE -> BE: POST /data
+BE -> DB: Verify device ownership
+DB --> BE: Ownership verified
+BE -> BE: Check temperature threshold
+alt Temperature > 40.0
+    BE -> BE: Log "High temperature detected!"
+end
+BE -> DB: Insert data into TimescaleDB
+DB --> BE: Data stored
+BE -> FE: Response: "Data stored!"
+@enduml
+
+/* registration */
+
+@startuml
+actor User
+participant "Frontend" as FE
+participant "Backend" as BE
+participant "Database" as DB
+
+User -> FE: Submit registration form (email, password)
+FE -> BE: POST /register
+BE -> BE: Hash password
+BE -> DB: INSERT INTO users (email, password_hash)
+alt Registration successful
+    DB --> BE: Return user ID and role
+    BE -> BE: Generate JWT token
+    BE -> FE: Response: { token }
+else Registration failed
+    DB --> BE: Error
+    BE -> FE: Response: "Registration failed"
+end
+@enduml
+
+/* login */
+
+@startuml
+actor User
+participant "Frontend" as FE
+participant "Backend" as BE
+participant "Database" as DB
+
+User -> FE: Submit login form (email, password)
+FE -> BE: POST /login
+BE -> DB: SELECT id, password_hash, role FROM users WHERE email = $1
+alt User found
+    DB --> BE: Return user data
+    BE -> BE: Verify password
+    alt Password valid
+        BE -> BE: Generate JWT token
+        BE -> FE: Response: { token }
+    else Password invalid
+        BE -> FE: Response: "Invalid credentials"
+    end
+else User not found
+    DB --> BE: No user found
+    BE -> FE: Response: "User not found"
+end
+@enduml
+
+/* list devices */
+
+@startuml
+actor User
+participant "Frontend" as FE
+participant "Backend" as BE
+participant "Database" as DB
+
+User -> FE: Request list of devices
+FE -> BE: GET /devices
+BE -> DB: SELECT role FROM users WHERE id = $1
+alt User is admin
+    DB --> BE: Return role = admin
+    BE -> DB: SELECT thing_name FROM user_devices
+else User is not admin
+    DB --> BE: Return role = user
+    BE -> DB: SELECT thing_name FROM user_devices WHERE user_id = $1
+end
+DB --> BE: Return list of devices
+BE -> FE: Response: [devices]
+@enduml
+
+/* delete device */
+
+@startuml
+actor User
+participant "Frontend" as FE
+participant "Backend" as BE
+participant "Database" as DB
+participant "AWS IoT" as AWS
+
+User -> FE: Request to delete device
+FE -> BE: DELETE /devices/{thing_name}
+alt User is not admin
+    BE -> DB: Verify device ownership
+    DB --> BE: Ownership verified
+else User is admin
+    BE -> BE: Skip ownership verification
+end
+BE -> AWS: DELETE thing from AWS IoT
+alt AWS deletion successful
+    AWS --> BE: Success
+    BE -> DB: DELETE FROM user_devices WHERE thing_name = $1
+    DB --> BE: Success
+    BE -> FE: Response: "Device deleted"
+else AWS deletion failed
+    AWS --> BE: Error
+    BE -> FE: Response: "Failed to delete device"
+end
+@enduml
+
+/* receive data */
+
+@startuml
+actor Device
+participant "Backend" as BE
+participant "Database" as DB
+
+Device -> BE: POST /data (device_id, temperature, timestamp)
+BE -> DB: Verify device ownership
+alt Ownership verified
+    DB --> BE: Success
+    BE -> BE: Check temperature threshold
+    alt Temperature > 40.0
+        BE -> BE: Log "High temperature detected!"
+    end
+    BE -> DB: INSERT INTO device_metrics (time, device_id, metric_type, value)
+    alt Data stored successfully
+        DB --> BE: Success
+        BE -> Device: Response: "Data stored!"
+    else Data storage failed
+        DB --> BE: Error
+        BE -> Device: Response: "Failed to store data"
+    end
+else Ownership verification failed
+    DB --> BE: Error
+    BE -> Device: Response: "Failed to verify device ownership"
+end
+@enduml
+
+/* aws verification */
+
+@startuml
+actor AWS
+participant "Backend" as BE
+
+AWS -> BE: GET /data?token=...
+alt Token provided
+    BE -> AWS: Response: token
+else Token missing
+    BE -> AWS: Response: "Token not found"
+end
+@enduml
