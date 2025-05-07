@@ -7,10 +7,8 @@ use std::rc::Rc;
 use crate::auth::validate_jwt;
 use crate::models::AuthenticatedUser;
 
-// Struct that represents the middleware
 pub struct JwtMiddleware;
 
-// Required by Actix to hook into the middleware system
 impl<S, B> Transform<S, ServiceRequest> for JwtMiddleware
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
@@ -29,7 +27,7 @@ where
     }
 }
 
-// The actual logic of your middleware
+
 pub struct JwtMiddlewareMiddleware<S> {
     service: Rc<S>,
 }
@@ -43,10 +41,9 @@ where
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> { //This to tell Actix that the middleware is ready to accept requests
         std::task::Poll::Ready(Ok(()))
     }
-    //mut req 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let service = Rc::clone(&self.service);
 
