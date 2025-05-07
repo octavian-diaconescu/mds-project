@@ -39,6 +39,7 @@ jobs:
 
     - name: Install dependencies
       run: cargo build
+      working-directory: ./iot-security-backend
 
     - name: Wait for database to be ready
       run: |
@@ -61,3 +62,4 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:password@localhost:5432/iot_security
       run: cargo test
+      working-directory: ./iot-security-backend
