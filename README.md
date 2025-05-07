@@ -1,4 +1,5 @@
 # IoT Security Platform
+>Please note this is a university project, and more of a proof of concept than a fully fledged application.
 
 A secure IoT device management platform with real-time temperature monitoring and anomaly detection.
 
@@ -58,6 +59,20 @@ A secure IoT device management platform with real-time temperature monitoring an
 - Docker
 - PostgreSQL with TimescaleDB
 - AWS Account with IoT Core access
+## UML Diagrams
+<details>
+<summary>Class and Sequential Diagrams</summary>
+<p align="center">
+  <img src="/docs/UML/class_diagram.png" alt="class_diagram">
+  <img src="/docs/UML/seq_delete-device.png" alt="seq_delete-device">
+  <img src="/docs/UML/seq_list-devices.png" alt="seq_list-devices">
+  <img src="/docs/UML/seq_login.png" alt="seq_login">
+  <img src="/docs/UML/seq_receive-data.png" alt="seq_receive-data">
+  <img src="/docs/UML/seq_registration.png" alt="seq_registration">
+  <img src="/docs/UML/seq_send-data.png" alt="seq_send-data">
+  <img src="/docs/UML/seq_aws.png" alt="seq_aws">
+</p>
+</details>
 
 ## Installation
 
@@ -103,12 +118,14 @@ npm install
 cd iot-security-backend
 cargo run
 ```
--  Use `cargo clean` to remove artifacts from the target directory. This project takes about 2.5GB of space.
+> [!TIP]
+>  Use `cargo clean` to remove artifacts from the target directory after you're done with the application. This project takes about 2.5GB of space.
 3. **Start the frontend**
 ```bash
 cd web-interface/iot-ui
 npm run dev
 ```
--  You may need to use `sudo npm run dev` on Unix based systems.
+>[!NOTE]
+>You may need to use `sudo npm run dev` on Unix based systems.
 
 
