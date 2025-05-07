@@ -43,10 +43,6 @@ jobs:
       env:
         PGPASSWORD: password
 
-    - name: Install dependencies
-      run: cargo build
-      working-directory: ./iot-security-backend
-
     - name: Wait for database to be ready
       run: |
         for i in {1..10}; do
@@ -57,6 +53,10 @@ jobs:
           echo "Waiting for database..."
           sleep 5
         done
+
+    - name: Install dependencies
+      run: cargo build
+      working-directory: ./iot-security-backend
 
     - name: Run tests
       env:
