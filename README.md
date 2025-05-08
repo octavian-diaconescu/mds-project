@@ -119,7 +119,7 @@ cd iot-security-backend
 cargo run
 ```
 > [!TIP]
->  Use `cargo clean` to remove artifacts from the target directory after you're done with the application. This project takes about 2.5GB of space.
+>  Use `cargo clean` to remove artifacts from the target directory after you're done with the application. This project takes about 3.3GB of space.
 3. **Start the frontend**
 ```bash
 cd web-interface/iot-ui
