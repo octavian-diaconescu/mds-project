@@ -78,7 +78,7 @@ A secure IoT device management platform with real-time temperature monitoring an
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/iot-security-platform.git
+git clone https://github.com/octavian-diaconescu/mds-project.git
 cd iot-security-platform
 ```
 2. **Set up the backend**
